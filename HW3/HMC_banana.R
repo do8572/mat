@@ -1,5 +1,5 @@
-source("HMC.r")
-source("Multiplot.r")
+source("/home/bro/Documents/mat/HW3/HMC.r")
+source("/home/bro/Documents/mat/HW3/Multiplot.R")
 library(ggplot2)
 library(numDeriv)
 library(coda)
@@ -78,4 +78,3 @@ gB <- ggplot(samples, aes(x=Q1, y=Q2)) + geom_density2d(colour="black") +
   geom_path() + ggtitle("sample density and path")
 multiplot(gA,gB,cols=2)
 dev.off()
-
