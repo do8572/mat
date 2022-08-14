@@ -1,17 +1,50 @@
-import numpy as np
+import numpy as np, pandas as pd
+import time
+
+class Observer:
+    def __init__(self, eval_fun, name):
+        self.name = name
+        self.savefile = name + ".csv"
+        self.observations = pd.DataFrame(columns=["fun", "run", "time", "iter", "score"])
+        self.eval_fun = eval_fun
+        self.run = 0
+        
+    def start_observing(self):
+        self.stime = time.time()
+        self.niter = 0
+        self.run += 1
+        
+    def observe(self, citer, x):
+        self.observations = self.observations.append({"fun": self.name,
+                                                      "run": self.run,
+                                                      "time": time.time() - self.stime,
+                                                      "iter": citer,
+                                                      "x": x}, ignore_index = True)
+    
+    def evaluate(self):
+        self.observations["score"] = self.observations["x"].apply(self.eval_fun)
+    
+    def save_observations(self, savefile=None):
+        if savefile is None:
+            self.observations.to_csv(self.savefile, index=False)
+        else:
+            self.observations.to_csv(savefile, index=False)
+            
+    def reset(self):
+        self.run = 0
 
 class gradient_descent:
-    def __init__(self, tol=1e-15):
+    def __init__(self, obs, tol=1e-15):
         self.tol = tol
+        self.observer = obs
 
     def set_params(self, f, df, ddf):
         self.f = f
         self.df = df
         self.ddf = ddf
 
-        #edf = np.linalg.eig(df)
         eddf, _ = np.linalg.eig(ddf([0,0,0]))
-        self.L = None #np.max(edf)
+        self.L = None 
         self.alpha = np.min(eddf)
         self.beta = np.max(eddf)
 
@@ -36,7 +69,9 @@ class gradient_descent:
         if gamma == None:
             gamma = 2 / (self.alpha + self.beta)
         xk = x0
-        for _ in range(num_steps):
+        self.observer.start_observing()
+        for i in range(num_steps):
+            self.observer.observe(i, xk)
             xk, x0 = xk - gamma * self.df(xk), xk
             if np.max(np.abs(self.df(xk))) < self.tol:
                 break
@@ -55,7 +90,10 @@ class gradient_descent:
         print(f"mu: {mu}")
         gamma = 0.01
         xk = x0
-        for _ in range(num_steps):
+        
+        self.observer.start_observing()
+        for i in range(num_steps):
+            self.observer.observe(i, xk)
             xk, x0 = xk - gamma * self.df(xk) + mu * (xk - x0), xk
             if np.max(np.abs(self.df(xk))) < self.tol:
                 break
@@ -69,7 +107,10 @@ class gradient_descent:
             kappa = self.beta / self.alpha
             mu = (np.sqrt(kappa) - 1) / (np.sqrt(kappa) + 1)
         xk = x0
-        for _ in range(num_steps):
+        
+        self.observer.start_observing()
+        for i in range(num_steps):
+            self.observer.observe(i, xk)
             x0 = xk
             xk = xk - gamma * self.df(xk + mu * (xk - x0)) + mu * (xk - x0)
             if np.max(np.abs(self.df(xk))) < self.tol:
@@ -80,7 +121,10 @@ class gradient_descent:
     def AdaGradGD(self, x0, gamma, num_steps=1000):
         Dk = np.ones(x0.shape).astype(float)
         xk = x0
-        for _ in range(num_steps):
+        
+        self.observer.start_observing()
+        for i in range(num_steps):
+            self.observer.observe(i, xk)
             x0 = xk
             xk = xk - gamma * (self.df(xk) / np.sqrt(Dk))
             Dk += self.df(xk)**2
@@ -91,7 +135,10 @@ class gradient_descent:
 
     def NewtonMethod(self, x0, num_steps=1000):
         xk = x0
-        for _ in range(num_steps):
+        
+        self.observer.start_observing()
+        for i in range(num_steps):
+            self.observer.observe(i, xk)
             x0 = xk
             xk = xk - np.linalg.inv(self.ddf(xk)).dot(self.df(xk))
             if np.max(np.abs(self.df(xk))) < self.tol:
@@ -102,7 +149,10 @@ class gradient_descent:
     def bfgs(self, x0, num_steps=1000):
         xk = x0
         Bk = np.eye(len(x0))
-        for _ in range(num_steps):
+        
+        self.observer.start_observing()
+        for i in range(num_steps):
+            self.observer.observe(i, xk)
             x0 = xk
             xk = xk - Bk.dot(self.df(xk))
             if np.max(np.abs(self.df(xk))) < self.tol:
@@ -113,91 +163,75 @@ class gradient_descent:
             yk = yk.reshape(len(yk),1)
             Bk = Bk - (dk.dot(yk.T.dot(Bk)) + Bk.dot(yk.dot(dk.T))) / (dk.T.dot(yk)) \
                  + (1 + (yk.T.dot(Bk.dot(yk)))/(dk.T.dot(yk))) * (dk.dot(dk.T)) / (dk.T.dot(yk))
-        print(f"LBFGS score: {self.f(xk)}")
+        print(f"BFGS score: {self.f(xk)}")
         return xk
-
-    # TODO: BFGS with line search
-
-    def SGD(self, x0, num_steps=1000):
-        if gamma == None:
-            gamma = 2 / (self.alpha + self.beta)
-        xk = x0
-        for _ in range(num_steps):
-            x0 = xk
-            xk = xk - gamma * self.df(xk)
-            if np.max(self.df(xk)) < self.tol:
-                break
-        return xk
-    
-    def lbfgs(self, x0, num_steps=1000):
-        pass
-
-class LinearRegression:
-    def __init__(self):
-        self.X = None
-        self.y = None
-        
-    def fit(self, N, opt):
-        self.generate_data(N)
-        f = lambda v: 0.5 * (self.X.dot(v) - self.y).T.dot(self.X.dot(v) - self.y)
-        df = lambda v: -self.X.T.dot(self.y - self.X.dot(v))
-        ddf = lambda v: -self.X.T.dot(self.X)
-
-        x0 = np.ones((2,1))
-        return gradient_descent().minimize(f, df, ddf, x0, method=opt, num_steps=100000)
-
-    def generate_data(self, N):
-        self.X = np.c_[np.arange(N), np.ones(N)]
-        self.y = (np.arange(N) + np.random.rand(N)).reshape(N,1)
 
 if __name__ == "__main__":
-    task = []
-    optimizers = ["GD", "Polyak", "Nesterov", "AdaGrad", "Newton", "BFGS"]
-    f = lambda x: x[0]**2 + 2 * x[1]**2 - 2 * x[1] * x[2] + 4 * x[2]**2 + 3 * x[0] - 4 * x[1] + 5 * x[2]
-    df = lambda x: np.array([2 * x[0] - 3, 4 * x[1] - 2 * x[2] - 4, -2 * x[1] + 8 * x[2] + 5])
-    ddf = lambda x: np.array([[2,0,0], [0,4,-2],[0,-2,8]])
-    #task.append(([np.array([1,2,3])], f, df, ddf))
+    task, optimizers = [], ["GD", "Polyak", "Nesterov", "AdaGrad", "Newton", "BFGS"]
 
-    f2 = lambda x: (x[0] - x[2])**2 + (2*x[1] + x[2])**2 + (4*x[0] - 2*x[1] + x[2])**2 + x[0] + x[1]
-    df2 = lambda x: np.array([34*x[0] -16*x[1] + 6 * x[2] + 1, \
-                              -16*x[0] + 16*x[1] + 1, \
-                             6*(x[0]+x[2]) 
-                            ])
-    ddf2 = lambda x: np.array([[34, -16, 6], [-16,16,0], [6,0,6]])
-    task.append(([np.array([0,0,0]), np.array([1,1,0])], f2, df2, ddf2))
+    f1 = lambda x: (x[0] - x[2])**2 + (2*x[1] + x[2])**2 + (4*x[0] - 2*x[1] + x[2])**2 + x[0] + x[1]
+    df1 = lambda x: np.array([34*x[0] - 16*x[1] + 6 * x[2] + 1,\
+                              -16*x[0] + 16*x[1] + 1,\
+                              6*(x[0]+x[2])])
+    ddf1 = lambda x: np.array([[34, -16, 6], [-16,16,0], [6,0,6]])
 
-    f3 = lambda x: (x[0]-1)**2 + (x[1]-1)**2 + 100 * (x[1] - x[0]**2)**2 + 100 * (x[2]-x[1]**2)**2
-    df3 = lambda x: np.array([2*(x[0]-1)-400*(x[1] - x[0]**2) * x[0],\
+    f2 = lambda x: (x[0]-1)**2 + (x[1]-1)**2 + 100 * (x[1] - x[0]**2)**2 + 100 * (x[2]-x[1]**2)**2
+    df2 = lambda x: np.array([2*(x[0]-1)-400*(x[1] - x[0]**2) * x[0],\
                               2*(x[1]-1) + 200*(x[1] - x[0]**2) - 400*(x[2] - x[1]**2) * x[1],\
                               200*(x[2] - x[1]**2)])
-    ddf3 = lambda x: np.array([[2-400*(x[1]- 3 * x[0]**2), -400* x[0], 0],\
+    ddf2 = lambda x: np.array([[2-400*(x[1]- 3 * x[0]**2), -400* x[0], 0],\
                                [-400* x[0], 202 - 400*(x[2] - 3 * x[1]**2), -400* x[1]],
                                [0, -400 * x[1], 200]])
-    #task.append(([np.array([1.2,1.2,1.2]), np.array([-1,1.2,1.2])], f3, df3, ddf3))
 
-    f4 = lambda x: (1.5 - x[0] + x[0]*x[1])**2 + (2.25 - x[0] + x[0] * x[1]**2)**2 + (2.625 - x[0] + x[0] * x[1]**3)**2
-    df4 = lambda x: 2 * np.array([(1.5-x[0] + x[0]*x[1])*(-1 + x[1]) + (2.25 - x[0] + x[0]* x[1]**2) * (-1 + x[1]**2) +\
+    f3 = lambda x: (1.5 - x[0] + x[0]*x[1])**2 + (2.25 - x[0] + x[0] * x[1]**2)**2 + (2.625 - x[0] + x[0] * x[1]**3)**2
+    df3 = lambda x: 2 * np.array([(1.5-x[0] + x[0]*x[1])*(-1 + x[1]) + (2.25 - x[0] + x[0]* x[1]**2) * (-1 + x[1]**2) +\
                               (2.625 - x[0] + x[0]*x[1]**3) * (-1 + x[1]**3),\
                               (1.5-x[0] + x[0]*x[1])*x[0] + 2*(2.25 - x[0] + x[0]* x[1]**2) * x[0] * x[1] +\
                               (2.625 - x[0] + x[0]*x[1]**3) * 3 * x[0] * x[1]**2])
-    ddf4 = lambda x: 2 * np.array([[(-1 + x[1])**2 + (-1 + x[1]**2)**2 + (-1 + x[1]**3)**2,\
+    ddf3 = lambda x: 2 * np.array([[(-1 + x[1])**2 + (-1 + x[1]**2)**2 + (-1 + x[1]**3)**2,\
                                 (1.5-x[0] + 2 * x[0]*x[1]) + (4.5 * x[1] - 2 * x[0] * x[1]) \
                                  + (37.5 * x[1]**2) - 3 * x[0] * x[1]**2 + 6 * x[0] * x[1]**5],\
                                [(1.5-x[0] + 2 * x[0]*x[1]) + (4.5 * x[1] - 2 * x[0] * x[1]) \
                                  + (37.5 * x[1]**2) - 3 * x[0] * x[1]**2 + 6 * x[0] * x[1]**5,\
                                    x[0]**2 + (4.5 * x[0] - 2 * x[0]**2 + 6 * x[0]**2 *x[1]**2) \
                                     + 2 * (75 * x[0] * x[1] - 3 * x[0]**2 * 2 * x[1] + 15 * x[0]**2 * x[1]**4)]])
-    #task.append(([np.array([1,1]), np.array([4.5,4.5])], f4, df4, ddf4))
     
-    gd = gradient_descent()
-    for opt in optimizers:
-        for t in task:
-            print(opt)
-            pnts, f, df, ddf = t
-            for pnt in pnts:
-                x_star = gd.minimize(f,df,ddf, pnt, method=opt, num_steps=10000)
-                print(x_star)
-    """
-    lr = LinearRegression().fit(100, "GD")
-    print(lr)
-    """
+    toy_functions = [{"fun": f1,
+                      "dfun": df1,
+                      "ddfun": ddf1,
+                      "obs": Observer(lambda x: np.mean(np.abs(x - np.array((-1/6, -11/48, 1/6)))), "gf1"),
+                      "start_pnts": [np.array([0,0,0]), np.array([1,1,0])]},
+                     {"fun": f2,
+                      "dfun": df2,
+                      "ddfun": ddf2,
+                      "obs": Observer(lambda x: np.mean(np.abs(x - np.array((1,1,1)))), "gf2"),
+                      "start_pnts": [np.array([1.2, 1.2, 1.2]), np.array([-1, 1.2, 1.2])]},
+                     {"fun": f3,
+                      "dfun": df3,
+                      "ddfun": ddf3,
+                      "obs": Observer(lambda x: np.mean(np.abs(x - np.array((3, 0.5)))), "gf3"),
+                      "start_pnts": [np.array([1, 1]), np.array([4.5, 4.5])]}]
+
+    for tfun in toy_functions:
+        fi, dfi, ddfi, obs, spnts = tfun["fun"], tfun["dfun"], tfun["ddfun"], tfun["obs"], tfun["start_pnts"]
+        
+        gd = gradient_descent(obs)
+        
+        for opt in optimizers:
+            for spnt in spnts:
+                xmin =  gd.minimize(fi, dfi, ddfi, spnt, method=opt, num_steps=100)
+
+                obs.evaluate()
+                obs.save_observations("GD_results/" + obs.name + "-" + opt + ".csv")
+                
+                print(f"Method: {opt}, f={obs.name}, spnt={spnt}")
+                print(f"Real x_min: {xmin}, f = {fi(xmin)}")
+                # print(f"Our x_min: {xint}, f = {fi(xint)} (converged: {success}, iterations: {uiter})")
+                # print(f"{'Found minimum.' if fi(xmin) >= fi(xint) else 'Failed to find minimum.'}")
+
+                print("---------------------------------------------")
+                print("---------------------------------------------")
+            obs.reset()
+
+    rf = pd.concat([tfun["obs"].observations for tfun in toy_functions])
+    rf = rf.drop("x", axis=1)
