@@ -2,9 +2,7 @@
 
 ## 1. Gradient Descent (Finished) ##
 
-## 2. Interior point methods ## 
-
-TODO
+## 2. Interior point methods (Finished) ## 
 
 ## 3. MCMC ##
 
